@@ -180,27 +180,48 @@
   }
 
   function findDivChart() {
-    const dialogCandidates = Array.from(document.querySelectorAll(
-      'dialog[open], [role="dialog"], [aria-modal="true"]'
-    )).filter(el => el.offsetParent !== null || el.tagName === 'DIALOG');
-
-    for (const dialog of dialogCandidates) {
-      const chart = tryParseDivGrid(dialog);
+    // Tier 1: ARIA dialogs / modals — works on sites that use proper semantics
+    for (const el of document.querySelectorAll('dialog[open], [role="dialog"], [aria-modal="true"]')) {
+      if (!el.offsetParent && el.tagName !== 'DIALOG') continue;
+      const chart = tryParseDivGrid(el);
       if (chart) return chart;
-      for (const el of dialog.querySelectorAll('ul, ol, [class*="table"], [class*="grid"], [class*="chart"], [class*="guide"], [class*="size"]')) {
-        const chart = tryParseDivGrid(el);
-        if (chart) return chart;
+      for (const child of el.querySelectorAll('ul, ol, [class*="table"], [class*="grid"], [class*="chart"], [class*="guide"], [class*="size"]')) {
+        const c = tryParseDivGrid(child);
+        if (c) return c;
       }
     }
 
-    const hinted = Array.from(document.querySelectorAll(
-      '[class*="size"], [class*="guide"], [class*="chart"], [id*="size"], [id*="guide"]'
-    )).filter(el => el.offsetParent !== null && countDimMatches(el.innerText) >= 2);
-
-    for (const el of hinted) {
+    // Tier 2: class/id name hints — works when class names aren't obfuscated
+    for (const el of document.querySelectorAll(
+      '[class*="size"], [class*="guide"], [class*="chart"], [id*="size"], [id*="guide"], [class*="measure"]'
+    )) {
+      if (!el.offsetParent || countDimMatches(el.innerText) < 2) continue;
       const chart = tryParseDivGrid(el);
       if (chart) return chart;
     }
+
+    // Tier 3: content-based walk — works on CSS-Modules sites (Zara, H&M, ASOS)
+    // where class names are obfuscated and ARIA is missing.
+    // Strategy: find short elements whose text IS a measurement keyword (a label cell),
+    // then climb the DOM tree looking for the grid container.
+    const seen = new Set();
+    for (const el of document.querySelectorAll('span, p, div, li, dt, td, th')) {
+      if (!el.offsetParent) continue;
+      const text = el.innerText.trim();
+      if (text.length > 20 || !Object.values(DIM_KEYWORDS).some(re => re.test(text))) continue;
+
+      // Climb up to find the tightest container with 2+ dim keywords + numeric ranges
+      let node = el.parentElement;
+      for (let depth = 0; depth < 8 && node && node !== document.body; depth++) {
+        if (!seen.has(node) && countDimMatches(node.innerText) >= 2 && /\d{2,3}/.test(node.innerText)) {
+          seen.add(node);
+          const chart = tryParseDivGrid(node);
+          if (chart) return chart;
+        }
+        node = node.parentElement;
+      }
+    }
+
     return null;
   }
 
@@ -216,14 +237,16 @@
   }
 
   // ── Auto-open size guide ───────────────────────────────────────────────────
-  // Finds and clicks the "Size guide" button so the user never has to.
 
   function findSizeGuideButton() {
-    for (const el of document.querySelectorAll('a, button, [role="button"], span')) {
+    for (const el of document.querySelectorAll('a, button, [role="button"], span, p')) {
       if (!el.offsetParent) continue;
-      if (/size\s*(guide|chart|&\s*fit|info|help)?s?\s*$/i.test(el.innerText.trim()) ||
-          /\bsize guide\b|\bsize chart\b/i.test(el.innerText)) {
-        return el;
+      const text = el.innerText.trim();
+      const label = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+      const combined = `${text} ${label}`;
+      // Match common size guide button labels across retailers
+      if (/size\s*(guide|chart|&|and|fit)|sizing\b|how to measure|fit guide|measurement guide/i.test(combined)) {
+        if (text.length < 60) return el; // ignore large container elements
       }
     }
     return null;
