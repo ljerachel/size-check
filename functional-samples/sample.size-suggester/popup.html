@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Size Suggester</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Size Suggester</h1>
+
+  <div id="no-measurements" hidden>
+    <p class="empty-msg">No measurements saved yet.</p>
+    <button id="setup-btn">Set up measurements →</button>
+  </div>
+
+  <div id="has-measurements" hidden>
+    <p class="status">Active on product pages ✓</p>
+    <ul id="measurement-list"></ul>
+    <button id="edit-btn">Edit measurements →</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
